@@ -3,6 +3,17 @@ const router = require("express").Router();
 const NUM_OF_ROWS = 8;
 const SEATS_PER_ROW = 12;
 
+const assert = require("assert");
+const { MongoClient } = require("mongodb");
+
+require("dotenv").config();
+const { MONGO_URI } = process.env;
+
+const options = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+};
+
 // Code that is generating the seats.
 // ----------------------------------
 // const seats = {};
@@ -39,15 +50,30 @@ const getRowName = (rowIndex) => {
 // };
 
 let state;
-
+const seats = {};
 router.get("/api/seat-availability", async (req, res) => {
   // if (!state) {
   //   state = {
   //     bookedSeats: randomlyBookSeats(30),
   //   };
   // }
+  const client = await MongoClient(MONGO_URI, options);
+  await client.connect();
+  const db = client.db("mongo_workshop_2");
+  const mongoSeats = await db.collection("seats").find().toArray();
+  mongoSeats.forEach((seat) => {
+    seats[seat._id] = seat;
+  });
 
-  return res.json({
+  // if (seats.length > 0) {
+  //   res
+  //     .status(200)
+  //     .json({ status: 200, data: seats });
+  // } else {
+  //   res.status(404);
+  // }
+  client.close();
+  return res.status(200).json({
     seats: seats,
     // bookedSeats: state.bookedSeats,
     numOfRows: 8,
@@ -55,19 +81,10 @@ router.get("/api/seat-availability", async (req, res) => {
   });
 });
 
-let lastBookingAttemptSucceeded = false;
-
 router.post("/api/book-seat", async (req, res) => {
   const { seatId, creditCard, expiration } = req.body;
 
-  if (!state) {
-    state = {
-      bookedSeats: randomlyBookSeats(30),
-    };
-  }
-
-  const isAlreadyBooked = !!state.bookedSeats[seatId];
-  if (isAlreadyBooked) {
+  if (seats[seatId].isBooked) {
     return res.status(400).json({
       message: "This seat has already been booked!",
     });
@@ -79,23 +96,27 @@ router.post("/api/book-seat", async (req, res) => {
       message: "Please provide credit card information!",
     });
   }
-
-  if (lastBookingAttemptSucceeded) {
-    lastBookingAttemptSucceeded = !lastBookingAttemptSucceeded;
-
-    return res.status(500).json({
-      message: "An unknown error has occurred. Please try your request again.",
+  try {
+    const client = await MongoClient(MONGO_URI, options);
+    await client.connect();
+    const db = client.db("mongo_workshop_2");
+    const _id = seatId;
+    const r = await db
+      .collection("seats")
+      .updateOne({ _id }, { $set: { isBooked: true } });
+    assert.equal(1, r.matchedCount);
+    assert.equal(1, r.modifiedCount);
+    seats[seatId].isBooked = true;
+    return res.status(200).json({
+      status: 200,
+      success: true,
     });
+  } catch (err) {
+    console.log(err.stack);
+    return res
+      .status(500)
+      .json({ status: 500, data: { ...req.body }, message: err.message });
   }
-
-  lastBookingAttemptSucceeded = !lastBookingAttemptSucceeded;
-
-  state.bookedSeats[seatId] = true;
-
-  return res.status(200).json({
-    status: 200,
-    success: true,
-  });
 });
 
 module.exports = router;
