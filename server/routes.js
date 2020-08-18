@@ -82,7 +82,7 @@ router.get("/api/seat-availability", async (req, res) => {
 });
 
 router.post("/api/book-seat", async (req, res) => {
-  const { seatId, creditCard, expiration } = req.body;
+  const { seatId, creditCard, expiration, fullName, email } = req.body;
 
   if (seats[seatId].isBooked) {
     return res.status(400).json({
@@ -103,7 +103,10 @@ router.post("/api/book-seat", async (req, res) => {
     const _id = seatId;
     const r = await db
       .collection("seats")
-      .updateOne({ _id }, { $set: { isBooked: true } });
+      .updateOne(
+        { _id },
+        { $set: { isBooked: true, fullName: fullName, email: email } }
+      );
     assert.equal(1, r.matchedCount);
     assert.equal(1, r.modifiedCount);
     seats[seatId].isBooked = true;
